@@ -58,7 +58,7 @@ export class EditTask implements OnInit {
   }
 
   /**
-   * Loads the current task data with subtasks and assigned contacts from Supabase.
+   * Loads the current task data with subtasks and assigned contacts from the backend.
    */
   async loadTask() {
     try {
@@ -105,7 +105,7 @@ export class EditTask implements OnInit {
   }
 
   /**
-   * Toggles the done state of a subtask and saves it to Supabase.
+   * Toggles the done state of a subtask and saves it to the backend.
    */
   async toggleSubtask(subtask: Subtask) {
     try {
@@ -166,7 +166,7 @@ export class EditTask implements OnInit {
   }
 
   /**
-   * Adds a new subtask for this task in Supabase.
+   * Adds a new subtask for this task in the backend.
    */
   async onAddSubtask(title: string) {
     if (!this.task) return;
@@ -181,7 +181,7 @@ export class EditTask implements OnInit {
   }
 
   /**
-   * Saves the edited title of a subtask to Supabase.
+   * Saves the edited title of a subtask to the backend.
    */
   async onUpdateSubtask(event: { id: string; title: string }) {
     try {
@@ -195,7 +195,7 @@ export class EditTask implements OnInit {
   }
 
   /**
-   * Removes a subtask permanently from Supabase.
+   * Removes a subtask permanently from the backend.
    */
   async onRemoveSubtask(id: string) {
     try {
@@ -209,7 +209,7 @@ export class EditTask implements OnInit {
   }
 
   /**
-   * Saves the edited task values back to Supabase and returns to the view mode.
+   * Saves the edited task values back to the backend and returns to the view mode.
    */
   async saveTask() {
     if (!this.task || !this.editTitle.trim()) return;

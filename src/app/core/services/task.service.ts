@@ -1,13 +1,12 @@
 import { Injectable, inject } from '@angular/core';
-import { SupabaseService } from './supabase.service';
+import { ApiService } from './api.service';
 import { Task, NewTask, TaskStatus } from '../models/task.model';
 import { Contact } from '../models/contact.model';
 
 /** Manages CRUD operations for tasks with a stale-while-revalidate in-memory cache. */
 @Injectable({ providedIn: 'root' })
 export class TaskService {
-  private supabase = inject(SupabaseService);
-  private table = this.supabase.client.from('tasks');
+  private api = inject(ApiService);
 
   private tasksCache: Task[] | null = null;
 
@@ -24,9 +23,8 @@ export class TaskService {
       }
       return this.tasksCache;
     }
-    const { data, error } = await this.table.select('*');
-    if (error) throw error;
-    this.tasksCache = this.sortTasks(data as Task[]);
+    const data = await this.api.get<Task[]>('tasks');
+    this.tasksCache = this.sortTasks(data);
     return this.tasksCache;
   }
 
@@ -36,18 +34,13 @@ export class TaskService {
       const cached = this.tasksCache.find((t) => t.id === id);
       if (cached) return cached;
     }
-    const { data, error } = await this.table.select('*').eq('id', id).single();
-    if (error) throw error;
-    return data as Task;
+    return this.api.get<Task>(`tasks/${id}`);
   }
 
   /** Creates a task, defaulting its status/position, and keeps the in-memory cache in sync. */
   async addTask(task: NewTask, assignedContactIds: string[] = []): Promise<Task> {
     const payload = this.buildNewTaskPayload(task, assignedContactIds);
-    const { data, error } = await this.table.insert(payload).select().single();
-    if (error) throw error;
-
-    const newTask = data as Task;
+    const newTask = await this.api.post<Task>('tasks', payload);
     this.cacheNewTask(newTask);
     return newTask;
   }
@@ -79,15 +72,12 @@ export class TaskService {
     this.updateCachedPositions(updates);
   }
 
-  /** Writes the new status/position for each task to the database. */
+  /** Writes the new status/position of all moved tasks to the database in one request. */
   private async persistTaskPositions(
     updates: { id: string; status: TaskStatus; position: number }[],
   ): Promise<void> {
-    await Promise.all(
-      updates.map(({ id, status, position }) =>
-        this.table.update({ status, position }).eq('id', id),
-      ),
-    );
+    if (!updates.length) return;
+    await this.api.post('tasks/positions', updates);
   }
 
   /** Applies the new status/position to the in-memory task cache, if present. */
@@ -114,10 +104,7 @@ export class TaskService {
 
   /** Updates a task and keeps the in-memory cache in sync. */
   async updateTask(id: string, changes: Partial<NewTask>): Promise<Task> {
-    const { data, error } = await this.table.update(changes).eq('id', id).select().single();
-    if (error) throw error;
-    
-    const updatedTask = data as Task;
+    const updatedTask = await this.api.patch<Task>(`tasks/${id}`, changes);
     if (this.tasksCache) {
       const idx = this.tasksCache.findIndex((t) => t.id === id);
       if (idx > -1) {
@@ -130,8 +117,7 @@ export class TaskService {
 
   /** Deletes a task and keeps the in-memory cache in sync. */
   async deleteTask(id: string): Promise<void> {
-    const { error } = await this.table.delete().eq('id', id);
-    if (error) throw error;
+    await this.api.delete(`tasks/${id}`);
 
     if (this.tasksCache) {
       this.tasksCache = this.tasksCache.filter((t) => t.id !== id);
@@ -163,9 +149,8 @@ export class TaskService {
    */
   private async revalidateTasks(onRevalidate: (tasks: Task[]) => void): Promise<void> {
     try {
-      const { data, error } = await this.table.select('*');
-      if (error) throw error;
-      const freshTasks = this.sortTasks(data as Task[]);
+      const data = await this.api.get<Task[]>('tasks');
+      const freshTasks = this.sortTasks(data);
 
       const hasChanged = JSON.stringify(this.tasksCache) !== JSON.stringify(freshTasks);
       if (hasChanged) {
@@ -182,20 +167,14 @@ export class TaskService {
     const task = await this.getTask(taskId);
     if (!task || !task.contact_ids || !task.contact_ids.length) return [];
 
-    const { data, error } = await this.supabase.client
-      .from('contacts')
-      .select('*')
-      .in('id', task.contact_ids);
-    if (error) throw error;
-    return data as Contact[];
+    return this.api.get<Contact[]>('contacts', { ids: task.contact_ids.join(',') });
   }
 
   /** Replaces the set of contacts assigned to a task and keeps the in-memory cache in sync. */
   async setAssignedContacts(taskId: string, contactIds: string[]): Promise<void> {
-    const { error } = await this.table
-      .update({ contact_ids: contactIds.length ? contactIds : null })
-      .eq('id', taskId);
-    if (error) throw error;
+    await this.api.patch(`tasks/${taskId}`, {
+      contact_ids: contactIds.length ? contactIds : null,
+    });
 
     if (this.tasksCache) {
       const idx = this.tasksCache.findIndex((t) => t.id === taskId);

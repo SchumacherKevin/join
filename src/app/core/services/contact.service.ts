@@ -1,12 +1,11 @@
 import { Injectable, inject } from '@angular/core';
-import { SupabaseService } from '../services/supabase.service';
+import { ApiService } from './api.service';
 import { Contact, NewContact } from '../models/contact.model';
 
 /** Manages CRUD operations for contacts with a stale-while-revalidate in-memory cache. */
 @Injectable({ providedIn: 'root' })
 export class ContactService {
-  private supabase = inject(SupabaseService);
-  private table = this.supabase.client.from('contacts');
+  private api = inject(ApiService);
 
   private contactsCache: Contact[] | null = null;
 
@@ -26,18 +25,14 @@ export class ContactService {
       }
       return this.contactsCache;
     }
-    const { data, error } = await this.table.select('*');
-    if (error) throw error;
-    this.contactsCache = this.sortContacts(data as Contact[]);
+    const data = await this.api.get<Contact[]>('contacts');
+    this.contactsCache = this.sortContacts(data);
     return this.contactsCache;
   }
 
   /** Creates a contact and keeps the in-memory cache in sync. */
   async addContact(contact: NewContact): Promise<Contact> {
-    const { data, error } = await this.table.insert(contact).select().single();
-    if (error) throw error;
-
-    const newContact = data as Contact;
+    const newContact = await this.api.post<Contact>('contacts', contact);
     if (this.contactsCache) {
       this.contactsCache.push(newContact);
       this.contactsCache = this.sortContacts(this.contactsCache);
@@ -47,10 +42,7 @@ export class ContactService {
 
   /** Updates a contact and keeps the in-memory cache in sync. */
   async updateContact(id: string, changes: Partial<NewContact>): Promise<Contact> {
-    const { data, error } = await this.table.update(changes).eq('id', id).select().single();
-    if (error) throw error;
-
-    const updatedContact = data as Contact;
+    const updatedContact = await this.api.patch<Contact>(`contacts/${id}`, changes);
     if (this.contactsCache) {
       const idx = this.contactsCache.findIndex((c) => c.id === id);
       if (idx > -1) {
@@ -63,8 +55,7 @@ export class ContactService {
 
   /** Deletes a contact and keeps the in-memory cache in sync. */
   async deleteContact(id: string): Promise<void> {
-    const { error } = await this.table.delete().eq('id', id);
-    if (error) throw error;
+    await this.api.delete(`contacts/${id}`);
 
     if (this.contactsCache) {
       this.contactsCache = this.contactsCache.filter((c) => c.id !== id);
@@ -91,9 +82,8 @@ export class ContactService {
    */
   private async revalidateContacts(onRevalidate: (contacts: Contact[]) => void): Promise<void> {
     try {
-      const { data, error } = await this.table.select('*');
-      if (error) throw error;
-      const freshContacts = this.sortContacts(data as Contact[]);
+      const data = await this.api.get<Contact[]>('contacts');
+      const freshContacts = this.sortContacts(data);
 
       const hasChanged = JSON.stringify(this.contactsCache) !== JSON.stringify(freshContacts);
       if (hasChanged) {
