@@ -12,7 +12,7 @@ const USER_KEY = 'join_user';
 
 /** The user as returned by the backend's /auth/login and /auth/me endpoints. */
 export interface AuthUser {
-  id: number;
+  id: number | string;
   email: string;
   name: string;
 }
